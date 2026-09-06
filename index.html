@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Old Business — Table</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --coal: #070605;
+      --amber: #c4a36a;
+      --cream: #e6d7b8;
+      --oxblood: #6b1c1c;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--coal);
+      color: var(--cream);
+      font-family: "IM Fell English", serif;
+      overflow: hidden;
+    }
+    body {
+      display: grid;
+      grid-template-rows: 52px 1fr 168px;
+      grid-template-columns: 210px 1fr 210px;
+      grid-template-areas:
+        "caption caption caption"
+        "kit     tile    roster"
+        "hand    hand    hand";
+    }
+
+    #caption {
+      grid-area: caption;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+      border-bottom: 1px solid #2a2216;
+      background: #0b0907;
+      letter-spacing: 0.16em;
+      font-family: Cinzel, serif;
+      font-size: 13px;
+      text-transform: uppercase;
+      color: var(--amber);
+    }
+    #caption .mute { color: #8a7a5e; letter-spacing: 0.12em; font-size: 11px; }
+
+    #kit, #roster {
+      padding: 14px 12px;
+      background: #0a0806;
+      border-right: 1px solid #2a2216;
+      overflow: auto;
+    }
+    #roster { border-right: 0; border-left: 1px solid #2a2216; }
+    .panel-label {
+      font-family: Cinzel, serif;
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: #8a7a5e;
+      margin: 4px 0 10px;
+    }
+    .weapon {
+      width: 100%;
+      display: block;
+      margin-bottom: 12px;
+      border: 1px solid #3a2f1c;
+    }
+    .token-pick {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      border: 2px solid #3a2f1c;
+      overflow: hidden;
+      cursor: pointer;
+      margin-bottom: 12px;
+      opacity: 0.72;
+      filter: saturate(0.85);
+    }
+    .token-pick.selected {
+      border-color: var(--amber);
+      opacity: 1;
+      filter: none;
+      box-shadow: 0 0 0 1px #000, 0 0 18px rgba(196,163,106,0.35);
+    }
+    .token-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    #tile-wrap {
+      grid-area: tile;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #050403;
+      padding: 16px 20px;
+    }
+    #tile {
+      position: relative;
+      width: min(100%, 1280px);
+      aspect-ratio: 2 / 1;
+      background: #000 url("assets/tile-a.jpg") center / cover no-repeat;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.65);
+    }
+    .space {
+      position: absolute;
+      top: 18%;
+      height: 64%;
+      cursor: pointer;
+    }
+    .space[data-id="0"] { left: 4%;  width: 16%; }
+    .space[data-id="1"] { left: 22%; width: 17%; }
+    .space[data-id="2"] { left: 41%; width: 18%; }
+    .space[data-id="3"] { left: 61%; width: 17%; }
+    .space[data-id="4"] { left: 80%; width: 16%; }
+    .space:hover::after,
+    .space.lit::after {
+      content: "";
+      position: absolute;
+      inset: 8% 10%;
+      border: 1px solid rgba(196,163,106,0.45);
+      box-shadow: inset 0 0 24px rgba(196,163,106,0.08);
+      pointer-events: none;
+    }
+
+    .piece {
+      position: absolute;
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 2px solid #c4a36a;
+      overflow: hidden;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.6);
+      z-index: 3;
+    }
+    .piece.selected { box-shadow: 0 0 0 2px #000, 0 0 20px rgba(196,163,106,0.55); }
+    .piece img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    #hand {
+      grid-area: hand;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: #0b0907;
+      border-top: 1px solid #2a2216;
+      padding: 12px 20px 16px;
+    }
+    .card {
+      height: 140px;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      border: 1px solid #3a2f1c;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.5);
+    }
+    .card.back { cursor: default; }
+  </style>
+</head>
+<body>
+  <header id="caption">
+    <span>The Old Business</span>
+    <span id="line">Tile A — crypt mouth. Pick a hunter. Click a space.</span>
+    <span class="mute" id="turn">Drive not spent · table shell</span>
+  </header>
+
+  <aside id="kit">
+    <div class="panel-label">Starting kit</div>
+    <img class="weapon" src="assets/dull_machete.jpg" alt="Dull Machete" />
+    <img class="weapon" src="assets/kids_crossbow.jpg" alt="Kid's Crossbow" />
+  </aside>
+
+  <main id="tile-wrap">
+    <div id="tile">
+      <div class="space" data-id="0" title="Gate"></div>
+      <div class="space" data-id="1" title="Left grate"></div>
+      <div class="space" data-id="2" title="Floor"></div>
+      <div class="space" data-id="3" title="Right grate"></div>
+      <div class="space" data-id="4" title="Stairs"></div>
+      <button class="piece selected" id="p-woman" data-who="woman" type="button">
+        <img src="assets/token-woman.jpg" alt="Woman" />
+      </button>
+      <button class="piece" id="p-man" data-who="man" type="button">
+        <img src="assets/token-man.jpg" alt="Man" />
+      </button>
+    </div>
+  </main>
+
+  <aside id="roster">
+    <div class="panel-label">Hunters</div>
+    <div class="token-pick selected" data-who="woman">
+      <img src="assets/token-woman.jpg" alt="Woman" />
+    </div>
+    <div class="token-pick" data-who="man">
+      <img src="assets/token-man.jpg" alt="Man" />
+    </div>
+  </aside>
+
+  <footer id="hand">
+    <img class="card back" src="assets/card-back.jpg" alt="Card back" />
+    <img class="card back" src="assets/card-back.jpg" alt="Card back" />
+    <img class="card back" src="assets/card-back.jpg" alt="Card back" />
+  </footer>
+
+  <script>
+    const SPOTS = [
+      { x: 12, y: 52 },
+      { x: 30.5, y: 50 },
+      { x: 50, y: 50 },
+      { x: 69.5, y: 50 },
+      { x: 86.5, y: 48 },
+    ];
+    const NAMES = { woman: "the woman", man: "the man" };
+    const state = {
+      selected: "woman",
+      at: { woman: 0, man: 1 },
+    };
+
+    const pieces = {
+      woman: document.getElementById("p-woman"),
+      man: document.getElementById("p-man"),
+    };
+    const line = document.getElementById("line");
+
+    function place(who) {
+      const spot = SPOTS[state.at[who]];
+      const el = pieces[who];
+      const bump = who === "man" ? 3.2 : -3.2;
+      const same = state.at.woman === state.at.man;
+      el.style.left = (spot.x + (same ? bump : 0)) + "%";
+      el.style.top = spot.y + "%";
+    }
+
+    function select(who) {
+      state.selected = who;
+      document.querySelectorAll(".piece").forEach((el) => {
+        el.classList.toggle("selected", el.dataset.who === who);
+      });
+      document.querySelectorAll(".token-pick").forEach((el) => {
+        el.classList.toggle("selected", el.dataset.who === who);
+      });
+      const names = ["gate", "left grate", "floor", "right grate", "stairs"];
+      line.textContent = NAMES[who] + " · " + names[state.at[who]] + ". Click a space.";
+    }
+
+    function moveTo(id) {
+      const who = state.selected;
+      state.at[who] = id;
+      place("woman");
+      place("man");
+      select(who);
+    }
+
+    document.querySelectorAll(".space").forEach((el) => {
+      el.addEventListener("click", () => moveTo(Number(el.dataset.id)));
+    });
+    document.querySelectorAll(".piece, .token-pick").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        select(el.dataset.who);
+      });
+    });
+
+    place("woman");
+    place("man");
+    select("woman");
+  </script>
+</body>
+</html>
