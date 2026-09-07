@@ -49,7 +49,9 @@
     .piece.waiting { opacity:.55; }
     .piece.dead { display:none; }
     .piece img { width:100%; height:100%; object-fit:cover; display:block; }
-    #dock { grid-area:dock; display:grid; grid-template-columns:118px 1fr auto auto auto; gap:14px; align-items:center; padding:8px 14px 10px; border-top:1px solid #2a2216; background:#0b0907; }
+    #dock { grid-area:dock; display:grid; grid-template-columns:118px 1fr auto auto auto auto; gap:14px; align-items:center; padding:8px 14px 10px; border-top:1px solid #2a2216; background:#0b0907; }
+    #played { height:132px; aspect-ratio:2/3; object-fit:cover; border:1px solid #3a2f1c; background:#050403; }
+    #played.armed { border-color:var(--amber); }
     #terror { height:140px; border:1px solid #3a2f1c; background:#050403 url("assets/terror.jpg") center / cover no-repeat; }
     #hand-row { display:flex; justify-content:center; gap:14px; }
     .card { height:132px; aspect-ratio:2/3; object-fit:cover; border:1px solid #3a2f1c; box-shadow:0 8px 16px rgba(0,0,0,.5); background:#050403; }
@@ -83,6 +85,7 @@
     <div id="terror" title="Terror 0"></div>
     <div id="hand-row"></div>
     <div id="dice-tray"></div>
+    <img id="played" src="assets/card-back.jpg" alt="Your card" />
     <img id="shown" src="assets/card-back.jpg" alt="Shown" />
     <div class="col-btns">
       <button id="btn-swing" type="button">Swing</button>
@@ -126,7 +129,7 @@
       meat:{ woman:HUNTER.woman.knacks.Brawn, man:HUNTER.man.knacks.Brawn, ghoul:2 },
       terror:0, tile:"A", stock:[], discard:[], shown:null,
       hands:{ woman:[], man:[] }, sleeves:{},
-      lastRoll:[], lastHits:0, defendWho:null
+      lastRoll:[], lastHits:0, successes:0, played:null, boost:0, defendWho:null, cost:1
     };
 
     function bootShoe(){ state.stock=shuffle(ALL); state.discard=[]; state.shown=null; state.hands.woman=[]; state.hands.man=[]; state.sleeves={}; }
@@ -179,6 +182,7 @@
       state.defendWho=null;
       state.drive[who]=DRIVE_MAX;
       HUNTERS.forEach((h)=>{ if(h!==who) state.drive[h]=0; });
+      state.successes=0; state.played=null; state.boost=0;
       fillHand(who);
       paint();
     }
@@ -200,18 +204,50 @@
       if(!inRange(who)) return;
       state.drive[who]-=1;
       clearShown();
-      const shown=grabFor("ghoul");
-      state.shown=shown;
+      state.played=null;
+      state.boost=0;
+      state.shown=grabFor("ghoul");
       const hits=rollTrial(who);
-      const cost=1;
-      if(shown && hits>=cost){
-        state.meat.ghoul-=1;
-        state.lastHits=hits;
+      state.successes=hits;
+      state.cost=1;
+      state.phase="spend";
+      paint();
+    }
+
+    function playOnSwing(index){
+      if(state.phase!=="spend") return;
+      const who=state.selected;
+      const hand=state.hands[who];
+      if(index<0||index>=hand.length) return;
+      if(state.played) return;
+      if(state.successes<state.cost) return;
+      state.successes-=state.cost;
+      state.played=hand.splice(index,1)[0];
+      state.boost=0;
+      paint();
+    }
+
+    function addToPlayed(){
+      if(state.phase!=="spend" || !state.played || state.successes<1) return;
+      state.successes-=1;
+      state.boost+=1;
+      paint();
+    }
+
+    function resolveSwing(){
+      if(state.phase!=="spend") return;
+      const shown=state.shown;
+      const played=state.played;
+      let beat=false;
+      if(shown && played){
+        beat = cardRank(played)+state.boost > cardRank(shown);
       }
-      if(state.meat.ghoul<=0){
-        state.meat.ghoul=0;
-        clearShown();
-      }
+      if(beat) state.meat.ghoul=Math.max(0, state.meat.ghoul-1);
+      if(played) state.discard.push(played);
+      state.played=null; state.boost=0; state.successes=0;
+      clearShown();
+      if(state.meat.ghoul<=0) state.meat.ghoul=0;
+      state.phase="hunter";
       paint();
     }
 
@@ -254,6 +290,7 @@
     }
 
     function playHand(index){
+      if(state.phase==="spend"){ playOnSwing(index); return; }
       if(state.phase!=="defend") return;
       const who=state.defendWho;
       const hand=state.hands[who];
@@ -276,6 +313,7 @@
     }
 
     function endTurn(){
+      if(state.phase==="spend"){ resolveSwing(); return; }
       if(state.phase==="defend"){ resolveDefend(false); return; }
       if(state.phase!=="hunter") return;
       if(HUNTERS.indexOf(state.selected)===0){ startTurn(HUNTERS[1]); return; }
@@ -353,21 +391,35 @@
       const who=state.selected;
       const sleeveN=Object.values(state.sleeves).reduce((n,s)=>n+s.length,0);
       let line=NAMES[who]+" · "+spaceName(state.at[who]);
+      if(state.phase==="spend"){
+        if(!state.played) line="Successes "+state.successes+". Play a card ("+state.cost+").";
+        else line="Successes "+state.successes+". Add to the card (1) or resolve.";
+      }
       if(state.phase==="defend") line=NAMES[who]+" must beat "+(state.shown||"the shown card")+" or take Meat.";
-      else if(state.meat.ghoul<=0) line="The ghoul is down.";
+      else if(state.meat.ghoul<=0 && state.phase==="hunter") line="The ghoul is down.";
       document.getElementById("line").textContent=line;
+      const playedVal = state.played ? (cardRank(state.played)+state.boost) : 0;
       document.getElementById("turn").textContent=
         "Drive "+state.drive[who]+
-        " · hits "+state.lastHits+
+        " · successes "+state.successes+
+        (state.played ? " · your card "+playedVal : "")+
         " · dice "+dieCount(who)+
-        " · stock "+state.stock.length+
         " · ghoul Meat "+state.meat.ghoul+
         " · Terror "+state.terror+
-        " · sleeved "+sleeveN;
+        " · stock "+state.stock.length;
       document.getElementById("terror").title="Terror "+state.terror;
+      const playedEl=document.getElementById("played");
+      playedEl.src=state.played?cardSrc(state.played):"assets/card-back.jpg";
+      playedEl.classList.toggle("armed", !!state.played);
       document.getElementById("shown").src=state.shown?cardSrc(state.shown):"assets/card-back.jpg";
-      document.getElementById("btn-swing").disabled=!(state.phase==="hunter" && state.drive[who]>0 && inRange(who) && state.meat.ghoul>0);
-      document.getElementById("btn-end").textContent=state.phase==="defend"?"Take the hit":"End turn";
+      const canSwing=state.phase==="hunter" && state.drive[who]>0 && inRange(who) && state.meat.ghoul>0;
+      const canAdd=state.phase==="spend" && state.played && state.successes>0;
+      const canResolve=state.phase==="spend" && !!state.played;
+      document.getElementById("btn-swing").disabled=!(canSwing || canAdd || canResolve);
+      document.getElementById("btn-swing").textContent=
+        state.phase==="spend" ? (state.played && state.successes>0 ? "Add +1" : "Resolve") : "Swing";
+      document.getElementById("btn-end").textContent=
+        state.phase==="defend" ? "Take the hit" : state.phase==="spend" ? "Resolve" : "End turn";
       HUNTERS.forEach(renderStrip);
       HUNTERS.concat(["ghoul"]).forEach(place);
       paintDice();
@@ -381,7 +433,7 @@
       const hand=state.hands[who]||[];
       for(let i=0;i<3;i++){
         const img=document.createElement("img");
-        const can=state.phase==="defend" && !!hand[i];
+        const can=(state.phase==="defend" || state.phase==="spend") && !!hand[i];
         img.className="card"+(can?" play":"");
         img.alt=hand[i]||"empty";
         img.src=hand[i]?cardSrc(hand[i]):"assets/card-back.jpg";
@@ -391,7 +443,15 @@
     }
 
     document.getElementById("btn-end").addEventListener("click", endTurn);
-    document.getElementById("btn-swing").addEventListener("click", swing);
+    document.getElementById("btn-swing").addEventListener("click", ()=>{
+      if(state.phase==="spend"){
+        if(state.played && state.successes>0) addToPlayed();
+        else resolveSwing();
+        return;
+      }
+      swing();
+    });
+    document.getElementById("played").addEventListener("click", addToPlayed);
     buildBoard(); bootShoe(); enterTile("A"); startTurn("woman");
   </script>
 </body>
