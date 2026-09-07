@@ -135,28 +135,27 @@
     }
     .space {
       position: absolute;
-      top: 18%;
-      height: 64%;
       cursor: pointer;
     }
-    .space[data-id="0"] { left: 4%;  width: 16%; }
-    .space[data-id="1"] { left: 22%; width: 17%; }
-    .space[data-id="2"] { left: 41%; width: 18%; }
-    .space[data-id="3"] { left: 61%; width: 17%; }
-    .space[data-id="4"] { left: 80%; width: 16%; }
-    .space:hover::after,
-    .space.lit::after {
+    .space.reach::after {
       content: "";
       position: absolute;
-      inset: 8% 10%;
-      border: 1px solid rgba(196,163,106,0.45);
-      box-shadow: inset 0 0 24px rgba(196,163,106,0.08);
+      inset: 10% 12%;
+      border: 1px solid rgba(196,163,106,0.7);
+      box-shadow: inset 0 0 24px rgba(196,163,106,0.12);
+      pointer-events: none;
+    }
+    .space:hover::after {
+      content: "";
+      position: absolute;
+      inset: 10% 12%;
+      border: 1px solid rgba(196,163,106,0.35);
       pointer-events: none;
     }
     .piece {
       position: absolute;
-      width: 72px;
-      height: 72px;
+      width: 64px;
+      height: 64px;
       border-radius: 50%;
       border: 2px solid #c4a36a;
       overflow: hidden;
@@ -166,6 +165,7 @@
       z-index: 3;
     }
     .piece.selected { box-shadow: 0 0 0 2px #000, 0 0 20px rgba(196,163,106,0.55); }
+    .piece.waiting { opacity: 0.55; }
     .piece img { width: 100%; height: 100%; object-fit: cover; display: block; }
     #hand {
       grid-area: hand;
@@ -192,8 +192,8 @@
 <body>
   <header id="caption">
     <span>The Old Business</span>
-    <span id="line">One shoe. Fifty-two.</span>
-    <span class="mute" id="turn">stock 52 · spent 0</span>
+    <span id="line">Her turn.</span>
+    <span class="mute" id="turn">Drive 2 · stock 40</span>
   </header>
 
   <aside id="kit">
@@ -202,24 +202,12 @@
     <img class="weapon" src="assets/kids_crossbow.jpg" alt="Kid's Crossbow" />
     <div class="panel-label">Shown</div>
     <img id="shown" class="shown" src="assets/card-back.jpg" alt="No card shown" />
-    <button class="ghost-btn" id="btn-show" type="button">Ghoul grabs</button>
     <div class="count" id="ghoul-count">ghoul sleeve 0</div>
+    <button class="ghost-btn" id="btn-end" type="button">End turn</button>
   </aside>
 
   <main id="tile-wrap">
-    <div id="tile">
-      <div class="space" data-id="0" title="Gate"></div>
-      <div class="space" data-id="1" title="Left grate"></div>
-      <div class="space" data-id="2" title="Floor"></div>
-      <div class="space" data-id="3" title="Right grate"></div>
-      <div class="space" data-id="4" title="Stairs"></div>
-      <button class="piece selected" id="p-woman" data-who="woman" type="button">
-        <img src="assets/token-woman.jpg" alt="Woman" />
-      </button>
-      <button class="piece" id="p-man" data-who="man" type="button">
-        <img src="assets/token-man.jpg" alt="Man" />
-      </button>
-    </div>
+    <div id="tile"></div>
   </main>
 
   <aside id="roster">
@@ -227,11 +215,11 @@
     <div class="token-pick selected" data-who="woman">
       <img src="assets/token-woman.jpg" alt="Woman" />
     </div>
-    <div class="count" id="c-woman">hand 0</div>
+    <div class="count" id="c-woman">hand 0 · Drive 0</div>
     <div class="token-pick" data-who="man">
       <img src="assets/token-man.jpg" alt="Man" />
     </div>
-    <div class="count" id="c-man">hand 0</div>
+    <div class="count" id="c-man">hand 0 · Drive 0</div>
   </aside>
 
   <footer id="hand"></footer>
@@ -240,22 +228,20 @@
     const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
     const SUITS = ["C","D","H","S"];
     const ALL = RANKS.flatMap((r) => SUITS.map((s) => r + s));
-    const SPOTS = [
-      { x: 12, y: 52 },
-      { x: 30.5, y: 50 },
-      { x: 50, y: 50 },
-      { x: 69.5, y: 50 },
-      { x: 86.5, y: 48 },
-    ];
-    const SPACE = ["gate", "left grate", "floor", "right grate", "stairs"];
+    const COLS = 5;
+    const ROWS = 2;
+    const COL_X = [12, 30.5, 50, 69.5, 86.5];
+    const ROW_Y = [38, 62];
+    const COL_NAME = ["gate", "left grate", "floor", "right grate", "stairs"];
+    const ROW_NAME = ["north", "south"];
     const NAMES = { woman: "the woman", man: "the man" };
+    const HUNTERS = ["woman", "man"];
+    const DRIVE_MAX = 2;
 
     const TILE_RULES = {
       A: {
         name: "crypt mouth",
-        sleeves: {
-          ghoul: ["2C", "3C", "4C", "5C", "6C", "7C"],
-        },
+        sleeves: { ghoul: ["2C", "3C", "4C", "5C", "6C", "7C"] },
       },
     };
 
@@ -267,14 +253,24 @@
       }
       return a;
     }
-
-    function cardSrc(id) {
-      return "assets/faces/" + id + ".jpg";
+    function cardSrc(id) { return "assets/faces/" + id + ".jpg"; }
+    function key(col, row) { return col + ":" + row; }
+    function parseKey(k) {
+      const [c, r] = k.split(":").map(Number);
+      return { col: c, row: r };
+    }
+    function adjacent(a, b) {
+      return Math.abs(a.col - b.col) + Math.abs(a.row - b.row) === 1;
+    }
+    function spaceName(pos) {
+      return ROW_NAME[pos.row] + " " + COL_NAME[pos.col];
     }
 
     const state = {
+      phase: "hunter",
       selected: "woman",
-      at: { woman: 0, man: 1 },
+      at: { woman: { col: 0, row: 0 }, man: { col: 0, row: 1 } },
+      drive: { woman: DRIVE_MAX, man: 0 },
       tile: "A",
       stock: [],
       discard: [],
@@ -296,9 +292,7 @@
       const rule = TILE_RULES[id];
       state.tile = id;
       if (!rule || !rule.sleeves) return;
-      Object.entries(rule.sleeves).forEach(([who, ids]) => {
-        assignSleeve(who, ids);
-      });
+      Object.entries(rule.sleeves).forEach(([who, ids]) => assignSleeve(who, ids));
     }
 
     function assignSleeve(who, ids) {
@@ -339,13 +333,36 @@
       }
     }
 
+    function startTurn(who) {
+      state.phase = "hunter";
+      state.selected = who;
+      state.drive[who] = DRIVE_MAX;
+      HUNTERS.forEach((h) => {
+        if (h !== who) state.drive[h] = 0;
+      });
+      fillHand(who);
+      paint();
+    }
+
     function playHand(index) {
+      if (state.phase !== "hunter") return;
       const who = state.selected;
       const hand = state.hands[who];
       if (index < 0 || index >= hand.length) return;
       const card = hand.splice(index, 1)[0];
       state.discard.push(card);
-      fillHand(who);
+      paint();
+    }
+
+    function tryMove(col, row) {
+      if (state.phase !== "hunter") return;
+      const who = state.selected;
+      if (state.drive[who] < 1) return;
+      const here = state.at[who];
+      const dest = { col, row };
+      if (!adjacent(here, dest)) return;
+      state.at[who] = dest;
+      state.drive[who] -= 1;
       paint();
     }
 
@@ -354,57 +371,98 @@
       if (!card) return;
       if (state.shown) state.discard.push(state.shown);
       state.shown = card;
-      paint();
     }
 
-    const pieces = {
-      woman: document.getElementById("p-woman"),
-      man: document.getElementById("p-man"),
-    };
+    function endTurn() {
+      if (state.phase !== "hunter") return;
+      const i = HUNTERS.indexOf(state.selected);
+      if (i === 0) {
+        startTurn(HUNTERS[1]);
+        return;
+      }
+      state.phase = "ghoul";
+      monsterGrab("ghoul");
+      startTurn(HUNTERS[0]);
+    }
+
+    const tileEl = document.getElementById("tile");
+    const pieces = {};
+
+    function buildBoard() {
+      tileEl.innerHTML = "";
+      for (let col = 0; col < COLS; col++) {
+        for (let row = 0; row < ROWS; row++) {
+          const el = document.createElement("div");
+          el.className = "space";
+          el.dataset.col = String(col);
+          el.dataset.row = String(row);
+          el.title = spaceName({ col, row });
+          el.style.left = (col === 0 ? 4 : col === 1 ? 22 : col === 2 ? 41 : col === 3 ? 61 : 80) + "%";
+          el.style.width = (col === 2 ? 18 : col === 0 || col === 4 ? 16 : 17) + "%";
+          el.style.top = row === 0 ? "18%" : "50%";
+          el.style.height = "32%";
+          el.addEventListener("click", () => tryMove(col, row));
+          tileEl.appendChild(el);
+        }
+      }
+      HUNTERS.forEach((who) => {
+        const btn = document.createElement("button");
+        btn.className = "piece";
+        btn.id = "p-" + who;
+        btn.type = "button";
+        btn.dataset.who = who;
+        btn.innerHTML = '<img src="assets/token-' + who + '.jpg" alt="' + who + '">';
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (state.phase === "hunter" && state.selected === who) return;
+        });
+        tileEl.appendChild(btn);
+        pieces[who] = btn;
+      });
+    }
 
     function place(who) {
-      const spot = SPOTS[state.at[who]];
-      const el = pieces[who];
-      const bump = who === "man" ? 3.2 : -3.2;
-      const same = state.at.woman === state.at.man;
-      el.style.left = (spot.x + (same ? bump : 0)) + "%";
-      el.style.top = spot.y + "%";
-    }
-
-    function select(who) {
-      state.selected = who;
-      document.querySelectorAll(".piece").forEach((el) => {
-        el.classList.toggle("selected", el.dataset.who === who);
-      });
-      document.querySelectorAll(".token-pick").forEach((el) => {
-        el.classList.toggle("selected", el.dataset.who === who);
-      });
-      paint();
-    }
-
-    function moveTo(id) {
-      state.at[state.selected] = id;
-      place("woman");
-      place("man");
-      paint();
+      const pos = state.at[who];
+      const other = HUNTERS.find((h) => h !== who);
+      const same = state.at[other].col === pos.col && state.at[other].row === pos.row;
+      const bump = who === "man" ? 2.4 : -2.4;
+      pieces[who].style.left = (COL_X[pos.col] + (same ? bump : 0)) + "%";
+      pieces[who].style.top = ROW_Y[pos.row] + "%";
+      pieces[who].classList.toggle("selected", state.selected === who && state.phase === "hunter");
+      pieces[who].classList.toggle("waiting", state.selected !== who);
     }
 
     function paint() {
       const who = state.selected;
       const sleeveN = Object.values(state.sleeves).reduce((n, s) => n + s.length, 0);
       document.getElementById("line").textContent =
-        NAMES[who] + " · " + SPACE[state.at[who]] + ". Click a card to spend it.";
+        NAMES[who] + " · " + spaceName(state.at[who]) + " · adjacent only.";
       document.getElementById("turn").textContent =
-        "stock " + state.stock.length +
+        "Drive " + state.drive[who] +
+        " · stock " + state.stock.length +
         " · spent " + state.discard.length +
         " · sleeved " + sleeveN;
-      document.getElementById("c-woman").textContent = "hand " + state.hands.woman.length;
-      document.getElementById("c-man").textContent = "hand " + state.hands.man.length;
+      document.getElementById("c-woman").textContent =
+        "hand " + state.hands.woman.length + " · Drive " + state.drive.woman;
+      document.getElementById("c-man").textContent =
+        "hand " + state.hands.man.length + " · Drive " + state.drive.man;
       const g = state.sleeves.ghoul || [];
       document.getElementById("ghoul-count").textContent =
-        "ghoul sleeve " + g.length + (state.shown ? " · showing " + state.shown : "");
-      const shown = document.getElementById("shown");
-      shown.src = state.shown ? cardSrc(state.shown) : "assets/card-back.jpg";
+        "ghoul sleeve " + g.length + (state.shown ? " · last " + state.shown : "");
+      document.getElementById("shown").src = state.shown ? cardSrc(state.shown) : "assets/card-back.jpg";
+
+      const here = state.at[who];
+      document.querySelectorAll(".space").forEach((el) => {
+        const dest = { col: Number(el.dataset.col), row: Number(el.dataset.row) };
+        const can = state.phase === "hunter" && state.drive[who] > 0 && adjacent(here, dest);
+        el.classList.toggle("reach", can);
+      });
+
+      HUNTERS.forEach(place);
+
+      document.querySelectorAll(".token-pick").forEach((el) => {
+        el.classList.toggle("selected", el.dataset.who === who);
+      });
 
       const dock = document.getElementById("hand");
       dock.innerHTML = "";
@@ -422,24 +480,15 @@
       }
     }
 
-    document.querySelectorAll(".space").forEach((el) => {
-      el.addEventListener("click", () => moveTo(Number(el.dataset.id)));
+    document.querySelectorAll(".token-pick").forEach((el) => {
+      el.addEventListener("click", () => {});
     });
-    document.querySelectorAll(".piece, .token-pick").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        select(el.dataset.who);
-      });
-    });
-    document.getElementById("btn-show").addEventListener("click", () => monsterGrab("ghoul"));
+    document.getElementById("btn-end").addEventListener("click", endTurn);
 
+    buildBoard();
     bootShoe();
     enterTile("A");
-    fillHand("woman");
-    fillHand("man");
-    place("woman");
-    place("man");
-    select("woman");
+    startTurn("woman");
   </script>
 </body>
 </html>
