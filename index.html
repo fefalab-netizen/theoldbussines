@@ -60,7 +60,15 @@
     #dock { grid-area:dock; display:grid; grid-template-columns:90px 1fr auto auto 70px auto auto auto; gap:10px; align-items:center; padding:8px 14px 10px; border-top:1px solid #2a2216; background:#0b0907; overflow:hidden; }
     #played, #shown { height:132px; aspect-ratio:2/3; object-fit:cover; border:1px solid #3a2f1c; background:#050403; }
     #played.armed { border-color:var(--amber); }
-    #terror { height:140px; border:1px solid #3a2f1c; background:#050403 url("assets/terror.jpg") center / cover no-repeat; }
+    #terror {
+      height:140px; width:52px; border:1px solid #3a2f1c; display:flex; flex-direction:column-reverse;
+      font-family:Cinzel, serif; font-size:11px;
+    }
+    #terror button {
+      flex:1; background:#120e0a; border:0; border-top:1px solid #2a2216; color:#5a4a32;
+      font-family:Cinzel, serif; font-size:11px; cursor:default;
+    }
+    #terror button.on { background:#6b1c1c; color:var(--amber); }
     #hand-row { display:flex; justify-content:center; gap:14px; }
     .card { height:132px; aspect-ratio:2/3; object-fit:cover; border:1px solid #3a2f1c; box-shadow:0 8px 16px rgba(0,0,0,.5); background:#050403; }
     .card.play { cursor:pointer; }
@@ -96,7 +104,13 @@
   </section>
   <main id="tile-wrap"><div id="tile"></div></main>
   <footer id="dock">
-    <div id="terror" title="Terror 0"></div>
+    <div id="terror" title="Terror 0">
+      <button type="button" data-t="0">0</button>
+      <button type="button" data-t="1">1</button>
+      <button type="button" data-t="2">2</button>
+      <button type="button" data-t="3">3</button>
+      <button type="button" data-t="4">4</button>
+    </div>
     <div id="hand-row"></div>
     <div id="dice-tray"></div>
     <div id="bank"><b id="bank-n">0</b><span>success</span></div>
@@ -130,8 +144,8 @@
     const RANK_VAL = { A:14, K:13, Q:12, J:11, "10":10, "9":9, "8":8, "7":7, "6":6, "5":5, "4":4, "3":3, "2":2 };
     const DIE = { 1:{hits:0,terror:1}, 2:{hits:1,terror:0}, 3:{hits:0,terror:0}, 4:{hits:1,terror:0}, 5:{hits:0,terror:0}, 6:{hits:2,terror:0} };
     const HUNTER = {
-      woman: { weaponSrc:"assets/dull_machete.jpg", weaponName:"Dull Machete", dice:3, range:"space" },
-      man:   { weaponSrc:"assets/kids_crossbow.jpg", weaponName:"Kid's Crossbow", dice:3, range:"tile" }
+      woman: { weaponSrc:"assets/dull_machete.jpg", weaponName:"Dull Machete", dice:3, range:"space", curse:0 },
+      man:   { weaponSrc:"assets/kids_crossbow.jpg", weaponName:"Kid's Crossbow", dice:3, range:"tile", curse:0 }
     };
     const TILE_RULES = { A:{ sleeves:{ ghoul:["2C","3C","4C","5C","6C","7C"] } } };
 
@@ -177,17 +191,22 @@
     function grabFromStock(){ reshuffleIfNeeded(); return state.stock.length?state.stock.pop():null; }
     function grabFor(who){ const s=state.sleeves[who]; if(s&&s.length) return s.pop(); return grabFromStock(); }
     function fillHand(who){ while(state.hands[who].length<3){ const c=grabFromStock(); if(!c) break; state.hands[who].push(c); } }
-    function tickTerror(){ if(state.terror<4) state.terror+=1; }
-    function dieCount(who){ return Math.max(0, HUNTER[who].dice - state.terror); }
+    function tickTerror(){
+      if(state.terror<4) state.terror+=1;
+      if(state.terror>=4) state.needCurse=true;
+    }
+    function dieCount(who){ return Math.max(0, HUNTER[who].dice - HUNTER[who].curse); }
+    function aimAt(id){
+      if(state.meat[id]>0){ state.target=id; paint(); }
+    }
     function inRange(who, gid){
       if(!gid || state.meat[gid]<=0) return false;
       if(HUNTER[who].range==="tile") return true;
       return sameSpace(state.at[who], state.at[gid]);
     }
     function pickTarget(who){
-      const live=livingGhouls().filter((id)=>inRange(who,id));
-      if(live.includes(state.target)) return state.target;
-      return live[0] || null;
+      if(state.target && state.meat[state.target]>0) return state.target;
+      return livingGhouls()[0] || null;
     }
     function rollTrial(who){
       const n=dieCount(who);
@@ -229,7 +248,7 @@
       if(state.phase!=="hunter") return;
       const who=state.selected;
       const gid=pickTarget(who);
-      if(!gid) return;
+      if(!gid || !inRange(who,gid)) return;
       if(state.drive[who]<1) return;
       state.target=gid;
       state.drive[who]-=1;
@@ -238,7 +257,22 @@
       state.shown=grabFor("ghoul");
       state.successes=rollTrial(who);
       state.cost=quarryOf(gid).cost;
-      state.phase="spend";
+      if(state.needCurse){
+        state.afterCurse="spend";
+        state.phase="curse";
+      } else {
+        state.phase="spend";
+      }
+      paint();
+    }
+
+    function applyCurse(who){
+      if(state.phase!=="curse") return;
+      HUNTER[who].curse+=1;
+      state.terror=0;
+      state.needCurse=false;
+      state.phase=state.afterCurse || "hunter";
+      state.afterCurse=null;
       paint();
     }
 
@@ -455,11 +489,16 @@
         '<div class="face"><img src="assets/token-'+who+'.jpg" alt=""></div>'+
         '<div class="wep" title="'+h.weaponName+'"><img src="'+h.weaponSrc+'" alt=""></div>'+
         '<div><div class="meat">'+h.weaponName+' · '+h.dice+' dice · Meat '+state.meat[who]+'/'+state.meatMax[who]+' · Drive '+state.drive[who]+'/'+state.driveMax[who]+'</div>'+
-        (picking
+        (state.phase==="curse"
+          ? '<div class="knacks"><button class="take" data-curse="'+who+'" type="button">Break this weapon −1 die</button></div>'
+          : picking
           ? '<div class="knacks"><button class="take" data-k="dice" type="button">+1 die</button><button class="take" data-k="meat" type="button">+1 Meat</button><button class="take" data-k="drive" type="button">+1 Drive</button></div>'
-          : '<div class="knack">range '+(h.range==="tile"?"this tile":"same stone")+'</div>')+
+          : '<div class="knack">range '+(h.range==="tile"?"this tile":"same stone")+(h.curse?' · cursed −'+h.curse:'')+'</div>')+
         '</div>';
-      el.querySelectorAll(".take").forEach((b)=>b.addEventListener("click", ()=>takePick(b.dataset.k)));
+      el.querySelectorAll(".take").forEach((b)=>{
+        if(b.dataset.curse) b.addEventListener("click", ()=>applyCurse(b.dataset.curse));
+        else b.addEventListener("click", ()=>takePick(b.dataset.k));
+      });
     }
 
     function place(who){
@@ -490,7 +529,10 @@
 
     function paint(){
       const who=state.selected;
-      let line=NAMES[who]+" · "+spaceName(state.at[who]);
+      const aimed=state.target && state.meat[state.target]>0 ? quarryOf(state.target).name+" @ "+spaceName(state.at[state.target]) : "nothing";
+      let line=NAMES[who]+" · "+spaceName(state.at[who])+" · aim "+aimed;
+      if(state.phase==="hunter" && state.target && !inRange(who,state.target)) line=NAMES[who]+" aimed at "+aimed+" — out of range.";
+      if(state.phase==="curse") line="Terror 4. Pick one weapon to break (−1 die).";
       if(state.phase==="spend"){
         line = state.played
           ? "Successes "+state.successes+". Add +1 or Resolve."
@@ -507,6 +549,9 @@
         " · live "+live.map((id)=>id+" "+state.meat[id]).join(" ")+
         " · Terror "+state.terror;
       document.getElementById("terror").title="Terror "+state.terror;
+      document.querySelectorAll("#terror button").forEach((b)=>{
+        b.classList.toggle("on", Number(b.dataset.t)===state.terror);
+      });
       document.getElementById("bank-n").textContent=String(state.successes);
       const playedEl=document.getElementById("played");
       playedEl.src=state.played?cardSrc(state.played):"assets/card-back.jpg";
@@ -514,7 +559,7 @@
       document.getElementById("shown").src=state.shown?cardSrc(state.shown):"assets/card-back.jpg";
 
       const gid=pickTarget(who);
-      document.getElementById("btn-swing").disabled=!(state.phase==="hunter" && state.drive[who]>0 && gid);
+      document.getElementById("btn-swing").disabled=!(state.phase==="hunter" && state.drive[who]>0 && gid && inRange(who,gid));
       document.getElementById("btn-add").disabled=!(state.phase==="spend" && state.played && state.successes>0);
       document.getElementById("btn-ok").disabled=state.phase!=="spend";
       document.getElementById("btn-end").disabled=!(state.phase==="hunter" || state.phase==="defend" || state.phase==="spend");
