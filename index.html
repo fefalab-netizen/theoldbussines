@@ -44,8 +44,10 @@
     .space.reach::after { content:""; position:absolute; inset:10% 12%; border:1px solid rgba(196,163,106,.7); box-shadow:inset 0 0 24px rgba(196,163,106,.12); pointer-events:none; }
     .space:hover::after { content:""; position:absolute; inset:10% 12%; border:1px solid rgba(196,163,106,.35); pointer-events:none; }
     .piece { position:absolute; width:68px; height:68px; border-radius:50%; border:2px solid #c4a36a; overflow:hidden; transform:translate(-50%,-50%); box-shadow:0 8px 16px rgba(0,0,0,.6); z-index:3; }
+    .piece.square { border-radius:8px; border-color:#6b1c1c; }
     .piece.selected { box-shadow:0 0 0 2px #000, 0 0 20px rgba(196,163,106,.55); }
     .piece.waiting { opacity:.55; }
+    .piece.dead { display:none; }
     .piece img { width:100%; height:100%; object-fit:cover; display:block; }
     #dock { grid-area:dock; display:grid; grid-template-columns:118px 1fr auto auto auto; gap:14px; align-items:center; padding:8px 14px 10px; border-top:1px solid #2a2216; background:#0b0907; }
     #terror { height:140px; border:1px solid #3a2f1c; background:#050403 url("assets/terror.jpg") center / cover no-repeat; }
@@ -53,11 +55,17 @@
     .card { height:132px; aspect-ratio:2/3; object-fit:cover; border:1px solid #3a2f1c; box-shadow:0 8px 16px rgba(0,0,0,.5); background:#050403; }
     .card.play { cursor:pointer; }
     .card.play:hover { border-color:var(--amber); }
-    #dice-tray { display:flex; gap:6px; min-width:120px; height:56px; align-items:center; }
-    #dice-tray img { height:52px; width:52px; border:1px solid #3a2f1c; object-fit:cover; opacity:.35; }
+    #dice-tray { display:flex; gap:6px; min-width:168px; align-items:center; flex-wrap:wrap; max-width:220px; }
+    #dice-tray img { height:48px; width:48px; border:1px solid #3a2f1c; object-fit:cover; opacity:.35; }
+    #dice-tray img.live { opacity:1; }
     #shown { height:132px; aspect-ratio:2/3; object-fit:cover; border:1px solid #3a2f1c; background:#050403; }
-    #btn-end { padding:14px 12px; background:#120e0a; border:1px solid #3a2f1c; color:var(--amber); font-family:Cinzel, serif; font-size:10px; letter-spacing:.14em; text-transform:uppercase; cursor:pointer; writing-mode:vertical-rl; transform:rotate(180deg); height:132px; }
-    #btn-end:hover { border-color:var(--amber); }
+    .col-btns { display:flex; flex-direction:column; gap:8px; height:132px; }
+    .col-btns button {
+      flex:1; background:#120e0a; border:1px solid #3a2f1c; color:var(--amber);
+      font-family:Cinzel, serif; font-size:10px; letter-spacing:.14em; text-transform:uppercase; cursor:pointer;
+    }
+    .col-btns button:hover { border-color:var(--amber); }
+    .col-btns button:disabled { opacity:.35; cursor:default; border-color:#2a2216; color:#8a7a5e; }
   </style>
 </head>
 <body>
@@ -74,12 +82,12 @@
   <footer id="dock">
     <div id="terror" title="Terror 0"></div>
     <div id="hand-row"></div>
-    <div id="dice-tray">
-      <img src="assets/dice/d2.jpg" alt="die" />
-      <img src="assets/dice/d4.jpg" alt="die" />
-    </div>
+    <div id="dice-tray"></div>
     <img id="shown" src="assets/card-back.jpg" alt="Shown" />
-    <button id="btn-end" type="button">End turn</button>
+    <div class="col-btns">
+      <button id="btn-swing" type="button">Swing</button>
+      <button id="btn-end" type="button">End turn</button>
+    </div>
   </footer>
   <script>
     const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
@@ -94,24 +102,31 @@
     const HUNTERS = ["woman","man"];
     const DRIVE_MAX = 2;
     const KNACKS = ["Martials","Marksman","Focus","Smarts","Brawn"];
+    const RANK_VAL = { A:14, K:13, Q:12, J:11, "10":10, "9":9, "8":8, "7":7, "6":6, "5":5, "4":4, "3":3, "2":2 };
+    const DIE = { 1:{ hits:0, terror:1 }, 2:{ hits:1, terror:0 }, 3:{ hits:0, terror:0 }, 4:{ hits:1, terror:0 }, 5:{ hits:0, terror:0 }, 6:{ hits:2, terror:0 } };
+
     const HUNTER = {
-      woman: { knacks:{ Martials:5, Marksman:2, Focus:3, Smarts:3, Brawn:5 }, weaponSrc:"assets/dull_machete.jpg", weaponName:"Dull Machete" },
-      man:   { knacks:{ Martials:2, Marksman:5, Focus:3, Smarts:4, Brawn:4 }, weaponSrc:"assets/kids_crossbow.jpg", weaponName:"Kid's Crossbow" }
+      woman: { knacks:{ Martials:5, Marksman:2, Focus:3, Smarts:3, Brawn:5 }, weaponSrc:"assets/dull_machete.jpg", weaponName:"Dull Machete", roll:"Martials", mod:-2, range:"space" },
+      man:   { knacks:{ Martials:2, Marksman:5, Focus:3, Smarts:4, Brawn:4 }, weaponSrc:"assets/kids_crossbow.jpg", weaponName:"Kid's Crossbow", roll:"Marksman", mod:-2, range:"tile" }
     };
     const TILE_RULES = { A:{ name:"crypt mouth", sleeves:{ ghoul:["2C","3C","4C","5C","6C","7C"] } } };
 
     function shuffle(list){ const a=list.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
     function cardSrc(id){ return "assets/faces/"+id+".jpg"; }
     function adjacent(a,b){ return Math.abs(a.col-b.col)+Math.abs(a.row-b.row)===1; }
+    function sameSpace(a,b){ return a.col===b.col && a.row===b.row; }
+    function manh(a,b){ return Math.abs(a.col-b.col)+Math.abs(a.row-b.row); }
     function spaceName(pos){ return ROW_NAME[pos.row]+" "+COL_NAME[pos.col]; }
+    function cardRank(id){ return RANK_VAL[id.slice(0,-1)]; }
 
     const state = {
       phase:"hunter", selected:"woman",
-      at:{ woman:{col:0,row:0}, man:{col:0,row:1} },
+      at:{ woman:{col:0,row:0}, man:{col:0,row:1}, ghoul:{col:4,row:1} },
       drive:{ woman:DRIVE_MAX, man:0 },
-      meat:{ woman:HUNTER.woman.knacks.Brawn, man:HUNTER.man.knacks.Brawn },
+      meat:{ woman:HUNTER.woman.knacks.Brawn, man:HUNTER.man.knacks.Brawn, ghoul:2 },
       terror:0, tile:"A", stock:[], discard:[], shown:null,
-      hands:{ woman:[], man:[] }, sleeves:{}
+      hands:{ woman:[], man:[] }, sleeves:{},
+      lastRoll:[], lastHits:0, defendWho:null
     };
 
     function bootShoe(){ state.stock=shuffle(ALL); state.discard=[]; state.shown=null; state.hands.woman=[]; state.hands.man=[]; state.sleeves={}; }
@@ -129,17 +144,45 @@
     function grabFromStock(){ reshuffleIfNeeded(); return state.stock.length?state.stock.pop():null; }
     function grabFor(who){ const s=state.sleeves[who]; if(s&&s.length) return s.pop(); return grabFromStock(); }
     function fillHand(who){ while(state.hands[who].length<3){ const c=grabFromStock(); if(!c) break; state.hands[who].push(c); } }
+    function tickTerror(){ if(state.terror<4) state.terror+=1; }
+    function dieCount(who){
+      const h=HUNTER[who];
+      return Math.max(0, h.knacks[h.roll] + h.mod - state.terror);
+    }
+    function inRange(who){
+      if(state.meat.ghoul<=0) return false;
+      const h=HUNTER[who];
+      if(h.range==="tile") return true;
+      return sameSpace(state.at[who], state.at.ghoul);
+    }
+    function rollTrial(who){
+      const n=dieCount(who);
+      const faces=[];
+      let hits=0;
+      for(let i=0;i<n;i++){
+        const f=1+Math.floor(Math.random()*6);
+        faces.push(f);
+        hits+=DIE[f].hits;
+        if(DIE[f].terror) tickTerror();
+      }
+      state.lastRoll=faces;
+      state.lastHits=hits;
+      return hits;
+    }
+    function clearShown(){
+      if(state.shown){ state.discard.push(state.shown); state.shown=null; }
+    }
+
     function startTurn(who){
-      state.phase="hunter"; state.selected=who; state.drive[who]=DRIVE_MAX;
+      state.phase="hunter";
+      state.selected=who;
+      state.defendWho=null;
+      state.drive[who]=DRIVE_MAX;
       HUNTERS.forEach((h)=>{ if(h!==who) state.drive[h]=0; });
-      fillHand(who); paint();
+      fillHand(who);
+      paint();
     }
-    function playHand(index){
-      if(state.phase!=="hunter") return;
-      const hand=state.hands[state.selected];
-      if(index<0||index>=hand.length) return;
-      state.discard.push(hand.splice(index,1)[0]); paint();
-    }
+
     function tryMove(col,row){
       if(state.phase!=="hunter") return;
       const who=state.selected;
@@ -148,19 +191,100 @@
       if(!adjacent(state.at[who],dest)) return;
       state.at[who]=dest; state.drive[who]-=1; paint();
     }
-    function monsterGrab(who){
-      const card=grabFor(who); if(!card) return;
+
+    function swing(){
+      if(state.phase!=="hunter") return;
+      const who=state.selected;
+      if(state.meat.ghoul<=0) return;
+      if(state.drive[who]<1) return;
+      if(!inRange(who)) return;
+      state.drive[who]-=1;
+      clearShown();
+      const shown=grabFor("ghoul");
+      state.shown=shown;
+      const hits=rollTrial(who);
+      const cost=1;
+      if(shown && hits>=cost){
+        state.meat.ghoul-=1;
+        state.lastHits=hits;
+      }
+      if(state.meat.ghoul<=0){
+        state.meat.ghoul=0;
+        clearShown();
+      }
+      paint();
+    }
+
+    function stepGhoulToward(target){
+      const g=state.at.ghoul;
+      const t=state.at[target];
+      if(sameSpace(g,t)) return false;
+      const opts=[];
+      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dc,dr])=>{
+        const c=g.col+dc, r=g.row+dr;
+        if(c>=0&&c<COLS&&r>=0&&r<ROWS) opts.push({col:c,row:r});
+      });
+      opts.sort((a,b)=>manh(a,t)-manh(b,t));
+      if(!opts.length) return false;
+      state.at.ghoul=opts[0];
+      return true;
+    }
+
+    function nearestHunter(){
+      return HUNTERS.slice().sort((a,b)=>manh(state.at.ghoul,state.at[a])-manh(state.at.ghoul,state.at[b]))[0];
+    }
+
+    function beginDefend(who){
+      state.phase="defend";
+      state.selected=who;
+      state.defendWho=who;
+      const card=grabFor("ghoul");
       if(state.shown) state.discard.push(state.shown);
       state.shown=card;
+      if(!card){ resolveDefend(false); return; }
+      paint();
     }
+
+    function resolveDefend(beat){
+      const who=state.defendWho;
+      if(!beat) state.meat[who]=Math.max(0, state.meat[who]-1);
+      clearShown();
+      state.defendWho=null;
+      startTurn("woman");
+    }
+
+    function playHand(index){
+      if(state.phase!=="defend") return;
+      const who=state.defendWho;
+      const hand=state.hands[who];
+      if(index<0||index>=hand.length) return;
+      const card=hand.splice(index,1)[0];
+      const beat=state.shown && cardRank(card)>cardRank(state.shown);
+      state.discard.push(card);
+      resolveDefend(!!beat);
+    }
+
+    function ghoulTurn(){
+      if(state.meat.ghoul<=0){ startTurn("woman"); return; }
+      state.phase="ghoul";
+      const prey=nearestHunter();
+      stepGhoulToward(prey);
+      if(sameSpace(state.at.ghoul, state.at[prey])){ beginDefend(prey); return; }
+      stepGhoulToward(prey);
+      if(sameSpace(state.at.ghoul, state.at[prey])){ beginDefend(prey); return; }
+      startTurn("woman");
+    }
+
     function endTurn(){
+      if(state.phase==="defend"){ resolveDefend(false); return; }
       if(state.phase!=="hunter") return;
       if(HUNTERS.indexOf(state.selected)===0){ startTurn(HUNTERS[1]); return; }
-      state.phase="ghoul"; monsterGrab("ghoul"); startTurn(HUNTERS[0]);
+      ghoulTurn();
     }
 
     const tileEl=document.getElementById("tile");
     const pieces={};
+
     function buildBoard(){
       tileEl.innerHTML="";
       for(let col=0;col<COLS;col++){
@@ -178,12 +302,17 @@
         }
       }
       HUNTERS.forEach((who)=>{
-        const btn=document.createElement("div");
-        btn.className="piece"; btn.dataset.who=who;
-        btn.innerHTML='<img src="assets/token-'+who+'.jpg" alt="'+who+'">';
-        tileEl.appendChild(btn); pieces[who]=btn;
+        const el=document.createElement("div");
+        el.className="piece";
+        el.innerHTML='<img src="assets/token-'+who+'.jpg" alt="'+who+'">';
+        tileEl.appendChild(el); pieces[who]=el;
       });
+      const g=document.createElement("div");
+      g.className="piece square";
+      g.innerHTML='<img src="assets/token-ghoul.jpg" alt="ghoul">';
+      tileEl.appendChild(g); pieces.ghoul=g;
     }
+
     function renderStrip(who){
       const h=HUNTER[who];
       const el=document.getElementById("strip-"+who);
@@ -194,44 +323,75 @@
         '<div><div class="meat">Meat '+state.meat[who]+' · Drive '+state.drive[who]+'</div>'+
         '<div class="knacks">'+KNACKS.map((n)=>'<span class="knack">'+n+'<b>'+h.knacks[n]+'</b></span>').join("")+'</div></div>';
     }
+
     function place(who){
       const pos=state.at[who];
-      const other=HUNTERS.find((h)=>h!==who);
-      const same=state.at[other].col===pos.col && state.at[other].row===pos.row;
-      const bump=who==="man"?2.4:-2.4;
-      pieces[who].style.left=(COL_X[pos.col]+(same?bump:0))+"%";
+      const bump = who==="ghoul" ? 0 : who==="man" ? 2.4 : -2.4;
+      const clash = who!=="ghoul" && sameSpace(state.at.woman, state.at.man);
+      pieces[who].style.left=(COL_X[pos.col]+(clash?bump:0))+"%";
       pieces[who].style.top=ROW_Y[pos.row]+"%";
-      pieces[who].classList.toggle("selected", state.selected===who);
-      pieces[who].classList.toggle("waiting", state.selected!==who);
+      pieces[who].classList.toggle("selected", state.selected===who && who!=="ghoul");
+      pieces[who].classList.toggle("waiting", who!=="ghoul" && state.selected!==who);
+      if(who==="ghoul") pieces[who].classList.toggle("dead", state.meat.ghoul<=0);
     }
+
+    function paintDice(){
+      const tray=document.getElementById("dice-tray");
+      tray.innerHTML="";
+      const faces=state.lastRoll.length?state.lastRoll:[2,4];
+      const live=state.lastRoll.length>0;
+      faces.forEach((f)=>{
+        const img=document.createElement("img");
+        img.src="assets/dice/d"+f+".jpg";
+        img.alt="d"+f;
+        if(live) img.className="live";
+        tray.appendChild(img);
+      });
+    }
+
     function paint(){
       const who=state.selected;
       const sleeveN=Object.values(state.sleeves).reduce((n,s)=>n+s.length,0);
-      document.getElementById("line").textContent=NAMES[who]+" · "+spaceName(state.at[who]);
+      let line=NAMES[who]+" · "+spaceName(state.at[who]);
+      if(state.phase==="defend") line=NAMES[who]+" must beat "+(state.shown||"the shown card")+" or take Meat.";
+      else if(state.meat.ghoul<=0) line="The ghoul is down.";
+      document.getElementById("line").textContent=line;
       document.getElementById("turn").textContent=
-        "Drive "+state.drive[who]+" · stock "+state.stock.length+" · spent "+state.discard.length+" · sleeved "+sleeveN+" · Terror "+state.terror;
+        "Drive "+state.drive[who]+
+        " · hits "+state.lastHits+
+        " · dice "+dieCount(who)+
+        " · stock "+state.stock.length+
+        " · ghoul Meat "+state.meat.ghoul+
+        " · Terror "+state.terror+
+        " · sleeved "+sleeveN;
       document.getElementById("terror").title="Terror "+state.terror;
       document.getElementById("shown").src=state.shown?cardSrc(state.shown):"assets/card-back.jpg";
-      HUNTERS.forEach(renderStrip); HUNTERS.forEach(place);
+      document.getElementById("btn-swing").disabled=!(state.phase==="hunter" && state.drive[who]>0 && inRange(who) && state.meat.ghoul>0);
+      document.getElementById("btn-end").textContent=state.phase==="defend"?"Take the hit":"End turn";
+      HUNTERS.forEach(renderStrip);
+      HUNTERS.concat(["ghoul"]).forEach(place);
+      paintDice();
       const here=state.at[who];
       document.querySelectorAll(".space").forEach((el)=>{
         const dest={col:Number(el.dataset.col),row:Number(el.dataset.row)};
-        el.classList.toggle("reach", state.drive[who]>0 && adjacent(here,dest));
+        el.classList.toggle("reach", state.phase==="hunter" && state.drive[who]>0 && adjacent(here,dest));
       });
       const dock=document.getElementById("hand-row");
       dock.innerHTML="";
-      const hand=state.hands[who];
+      const hand=state.hands[who]||[];
       for(let i=0;i<3;i++){
         const img=document.createElement("img");
-        img.className="card"+(hand[i]?" play":"");
+        const can=state.phase==="defend" && !!hand[i];
+        img.className="card"+(can?" play":"");
         img.alt=hand[i]||"empty";
         img.src=hand[i]?cardSrc(hand[i]):"assets/card-back.jpg";
-        if(hand[i]){ const idx=i; img.addEventListener("click",()=>playHand(idx)); }
+        if(can){ const idx=i; img.addEventListener("click",()=>playHand(idx)); }
         dock.appendChild(img);
       }
     }
 
     document.getElementById("btn-end").addEventListener("click", endTurn);
+    document.getElementById("btn-swing").addEventListener("click", swing);
     buildBoard(); bootShoe(); enterTile("A"); startTurn("woman");
   </script>
 </body>
