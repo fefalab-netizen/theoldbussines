@@ -25,18 +25,18 @@
     body {
       display: grid;
       grid-template-rows: 52px 1fr 168px;
-      grid-template-columns: 210px 1fr 210px;
+      grid-template-columns: 210px 1fr 220px;
       grid-template-areas:
         "caption caption caption"
         "kit     tile    roster"
         "hand    hand    hand";
     }
-
     #caption {
       grid-area: caption;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 16px;
       padding: 0 22px;
       border-bottom: 1px solid #2a2216;
       background: #0b0907;
@@ -47,7 +47,6 @@
       color: var(--amber);
     }
     #caption .mute { color: #8a7a5e; letter-spacing: 0.12em; font-size: 11px; }
-
     #kit, #roster {
       padding: 14px 12px;
       background: #0a0806;
@@ -76,7 +75,7 @@
       border: 2px solid #3a2f1c;
       overflow: hidden;
       cursor: pointer;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       opacity: 0.72;
       filter: saturate(0.85);
     }
@@ -87,7 +86,37 @@
       box-shadow: 0 0 0 1px #000, 0 0 18px rgba(196,163,106,0.35);
     }
     .token-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
+    .count {
+      font-family: Cinzel, serif;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #8a7a5e;
+      margin: 0 0 14px;
+    }
+    .ghost-btn {
+      width: 100%;
+      margin: 8px 0 12px;
+      padding: 8px 6px;
+      background: #120e0a;
+      border: 1px solid #3a2f1c;
+      color: var(--amber);
+      font-family: Cinzel, serif;
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .ghost-btn:hover { border-color: var(--amber); }
+    .shown {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      border: 1px solid #3a2f1c;
+      display: block;
+      margin-bottom: 10px;
+      background: #050403;
+    }
     #tile-wrap {
       grid-area: tile;
       position: relative;
@@ -124,7 +153,6 @@
       box-shadow: inset 0 0 24px rgba(196,163,106,0.08);
       pointer-events: none;
     }
-
     .piece {
       position: absolute;
       width: 72px;
@@ -139,7 +167,6 @@
     }
     .piece.selected { box-shadow: 0 0 0 2px #000, 0 0 20px rgba(196,163,106,0.55); }
     .piece img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
     #hand {
       grid-area: hand;
       display: flex;
@@ -156,21 +183,27 @@
       object-fit: cover;
       border: 1px solid #3a2f1c;
       box-shadow: 0 8px 18px rgba(0,0,0,0.5);
+      background: #050403;
     }
-    .card.back { cursor: default; }
+    .card.play { cursor: pointer; }
+    .card.play:hover { border-color: var(--amber); }
   </style>
 </head>
 <body>
   <header id="caption">
     <span>The Old Business</span>
-    <span id="line">Tile A — crypt mouth. Pick a hunter. Click a space.</span>
-    <span class="mute" id="turn">Drive not spent · table shell</span>
+    <span id="line">One shoe. Fifty-two.</span>
+    <span class="mute" id="turn">stock 52 · spent 0</span>
   </header>
 
   <aside id="kit">
     <div class="panel-label">Starting kit</div>
     <img class="weapon" src="assets/dull_machete.jpg" alt="Dull Machete" />
     <img class="weapon" src="assets/kids_crossbow.jpg" alt="Kid's Crossbow" />
+    <div class="panel-label">Shown</div>
+    <img id="shown" class="shown" src="assets/card-back.jpg" alt="No card shown" />
+    <button class="ghost-btn" id="btn-show" type="button">Ghoul grabs</button>
+    <div class="count" id="ghoul-count">ghoul sleeve 0</div>
   </aside>
 
   <main id="tile-wrap">
@@ -194,18 +227,19 @@
     <div class="token-pick selected" data-who="woman">
       <img src="assets/token-woman.jpg" alt="Woman" />
     </div>
+    <div class="count" id="c-woman">hand 0</div>
     <div class="token-pick" data-who="man">
       <img src="assets/token-man.jpg" alt="Man" />
     </div>
+    <div class="count" id="c-man">hand 0</div>
   </aside>
 
-  <footer id="hand">
-    <img class="card back" src="assets/card-back.jpg" alt="Card back" />
-    <img class="card back" src="assets/card-back.jpg" alt="Card back" />
-    <img class="card back" src="assets/card-back.jpg" alt="Card back" />
-  </footer>
+  <footer id="hand"></footer>
 
   <script>
+    const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+    const SUITS = ["C","D","H","S"];
+    const ALL = RANKS.flatMap((r) => SUITS.map((s) => r + s));
     const SPOTS = [
       { x: 12, y: 52 },
       { x: 30.5, y: 50 },
@@ -213,17 +247,120 @@
       { x: 69.5, y: 50 },
       { x: 86.5, y: 48 },
     ];
+    const SPACE = ["gate", "left grate", "floor", "right grate", "stairs"];
     const NAMES = { woman: "the woman", man: "the man" };
+
+    const TILE_RULES = {
+      A: {
+        name: "crypt mouth",
+        sleeves: {
+          ghoul: ["2C", "3C", "4C", "5C", "6C", "7C"],
+        },
+      },
+    };
+
+    function shuffle(list) {
+      const a = list.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function cardSrc(id) {
+      return "assets/faces/" + id + ".jpg";
+    }
+
     const state = {
       selected: "woman",
       at: { woman: 0, man: 1 },
+      tile: "A",
+      stock: [],
+      discard: [],
+      shown: null,
+      hands: { woman: [], man: [] },
+      sleeves: {},
     };
+
+    function bootShoe() {
+      state.stock = shuffle(ALL);
+      state.discard = [];
+      state.shown = null;
+      state.hands.woman = [];
+      state.hands.man = [];
+      state.sleeves = {};
+    }
+
+    function enterTile(id) {
+      const rule = TILE_RULES[id];
+      state.tile = id;
+      if (!rule || !rule.sleeves) return;
+      Object.entries(rule.sleeves).forEach(([who, ids]) => {
+        assignSleeve(who, ids);
+      });
+    }
+
+    function assignSleeve(who, ids) {
+      const take = [];
+      const keep = [];
+      state.stock.forEach((id) => {
+        if (ids.includes(id)) take.push(id);
+        else keep.push(id);
+      });
+      state.stock = keep;
+      state.sleeves[who] = shuffle(take);
+    }
+
+    function reshuffleIfNeeded() {
+      if (state.stock.length === 0 && state.discard.length) {
+        state.stock = shuffle(state.discard);
+        state.discard = [];
+      }
+    }
+
+    function grabFromStock() {
+      reshuffleIfNeeded();
+      if (!state.stock.length) return null;
+      return state.stock.pop();
+    }
+
+    function grabFor(who) {
+      const sleeve = state.sleeves[who];
+      if (sleeve && sleeve.length) return sleeve.pop();
+      return grabFromStock();
+    }
+
+    function fillHand(who) {
+      while (state.hands[who].length < 3) {
+        const card = grabFromStock();
+        if (!card) break;
+        state.hands[who].push(card);
+      }
+    }
+
+    function playHand(index) {
+      const who = state.selected;
+      const hand = state.hands[who];
+      if (index < 0 || index >= hand.length) return;
+      const card = hand.splice(index, 1)[0];
+      state.discard.push(card);
+      fillHand(who);
+      paint();
+    }
+
+    function monsterGrab(who) {
+      const card = grabFor(who);
+      if (!card) return;
+      if (state.shown) state.discard.push(state.shown);
+      state.shown = card;
+      paint();
+    }
 
     const pieces = {
       woman: document.getElementById("p-woman"),
       man: document.getElementById("p-man"),
     };
-    const line = document.getElementById("line");
 
     function place(who) {
       const spot = SPOTS[state.at[who]];
@@ -242,16 +379,47 @@
       document.querySelectorAll(".token-pick").forEach((el) => {
         el.classList.toggle("selected", el.dataset.who === who);
       });
-      const names = ["gate", "left grate", "floor", "right grate", "stairs"];
-      line.textContent = NAMES[who] + " · " + names[state.at[who]] + ". Click a space.";
+      paint();
     }
 
     function moveTo(id) {
-      const who = state.selected;
-      state.at[who] = id;
+      state.at[state.selected] = id;
       place("woman");
       place("man");
-      select(who);
+      paint();
+    }
+
+    function paint() {
+      const who = state.selected;
+      const sleeveN = Object.values(state.sleeves).reduce((n, s) => n + s.length, 0);
+      document.getElementById("line").textContent =
+        NAMES[who] + " · " + SPACE[state.at[who]] + ". Click a card to spend it.";
+      document.getElementById("turn").textContent =
+        "stock " + state.stock.length +
+        " · spent " + state.discard.length +
+        " · sleeved " + sleeveN;
+      document.getElementById("c-woman").textContent = "hand " + state.hands.woman.length;
+      document.getElementById("c-man").textContent = "hand " + state.hands.man.length;
+      const g = state.sleeves.ghoul || [];
+      document.getElementById("ghoul-count").textContent =
+        "ghoul sleeve " + g.length + (state.shown ? " · showing " + state.shown : "");
+      const shown = document.getElementById("shown");
+      shown.src = state.shown ? cardSrc(state.shown) : "assets/card-back.jpg";
+
+      const dock = document.getElementById("hand");
+      dock.innerHTML = "";
+      const hand = state.hands[who];
+      for (let i = 0; i < 3; i++) {
+        const img = document.createElement("img");
+        img.className = "card" + (hand[i] ? " play" : "");
+        img.alt = hand[i] || "empty";
+        img.src = hand[i] ? cardSrc(hand[i]) : "assets/card-back.jpg";
+        if (hand[i]) {
+          const idx = i;
+          img.addEventListener("click", () => playHand(idx));
+        }
+        dock.appendChild(img);
+      }
     }
 
     document.querySelectorAll(".space").forEach((el) => {
@@ -263,7 +431,12 @@
         select(el.dataset.who);
       });
     });
+    document.getElementById("btn-show").addEventListener("click", () => monsterGrab("ghoul"));
 
+    bootShoe();
+    enterTile("A");
+    fillHand("woman");
+    fillHand("man");
     place("woman");
     place("man");
     select("woman");
