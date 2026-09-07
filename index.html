@@ -13,11 +13,18 @@
     html, body { height:100%; background:var(--coal); color:var(--cream); font-family:"IM Fell English", serif; overflow:hidden; }
     body { display:grid; grid-template-rows:42px 78px 1fr 158px; grid-template-areas:"top" "strips" "tile" "dock"; }
     #caption {
-      grid-area:top; display:flex; align-items:center; justify-content:space-between;
+      grid-area:top; display:flex; align-items:center; justify-content:space-between; gap:16px;
       padding:0 18px; border-bottom:1px solid #2a2216; background:#0b0907;
       font-family:Cinzel, serif; font-size:12px; letter-spacing:0.16em; text-transform:uppercase; color:var(--amber);
     }
-    #caption .mute { color:#8a7a5e; letter-spacing:0.12em; font-size:11px; }
+    #caption .mute { color:#8a7a5e; letter-spacing:0.12em; font-size:11px; flex:1; text-align:right; }
+    #btn-end {
+      padding:8px 16px; background:#6b1c1c; border:1px solid var(--amber); color:var(--amber);
+      font-family:Cinzel, serif; font-size:11px; letter-spacing:.16em; text-transform:uppercase; cursor:pointer;
+      white-space:nowrap;
+    }
+    #btn-end:hover { background:#8a2424; }
+    #btn-end:disabled { opacity:.35; cursor:default; }
     #strips { grid-area:strips; display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid #2a2216; background:#0a0806; }
     .strip { display:grid; grid-template-columns:70px 86px 1fr; gap:10px; align-items:center; padding:8px 14px; }
     .strip + .strip { border-left:1px solid #2a2216; }
@@ -50,7 +57,7 @@
     .piece.waiting { opacity:.55; }
     .piece.dead { display:none; }
     .piece img { width:100%; height:100%; object-fit:cover; display:block; }
-    #dock { grid-area:dock; display:grid; grid-template-columns:118px 1fr auto auto auto auto; gap:12px; align-items:center; padding:8px 14px 10px; border-top:1px solid #2a2216; background:#0b0907; }
+    #dock { grid-area:dock; display:grid; grid-template-columns:90px 1fr auto auto 70px auto auto auto; gap:10px; align-items:center; padding:8px 14px 10px; border-top:1px solid #2a2216; background:#0b0907; overflow:hidden; }
     #played, #shown { height:132px; aspect-ratio:2/3; object-fit:cover; border:1px solid #3a2f1c; background:#050403; }
     #played.armed { border-color:var(--amber); }
     #terror { height:140px; border:1px solid #3a2f1c; background:#050403 url("assets/terror.jpg") center / cover no-repeat; }
@@ -81,6 +88,7 @@
     <span>The Old Business</span>
     <span id="line">Her turn.</span>
     <span class="mute" id="turn">Drive 3</span>
+    <button id="btn-end" type="button">End turn</button>
   </header>
   <section id="strips">
     <div class="strip" id="strip-woman"></div>
@@ -98,7 +106,6 @@
       <button id="btn-swing" type="button">Swing</button>
       <button id="btn-add" type="button">Add +1</button>
       <button id="btn-ok" type="button">Resolve</button>
-      <button id="btn-end" type="button">End turn</button>
     </div>
   </footer>
   <script>
@@ -510,8 +517,8 @@
       document.getElementById("btn-swing").disabled=!(state.phase==="hunter" && state.drive[who]>0 && gid);
       document.getElementById("btn-add").disabled=!(state.phase==="spend" && state.played && state.successes>0);
       document.getElementById("btn-ok").disabled=state.phase!=="spend";
-      document.getElementById("btn-end").disabled=!(state.phase==="hunter" || state.phase==="defend");
-      document.getElementById("btn-end").textContent=state.phase==="defend"?"Take the hit":"End turn";
+      document.getElementById("btn-end").disabled=!(state.phase==="hunter" || state.phase==="defend" || state.phase==="spend");
+      document.getElementById("btn-end").textContent=state.phase==="defend"?"Take the hit":state.phase==="spend"?"Resolve":"End turn";
 
       HUNTERS.forEach(renderStrip);
       HUNTERS.concat(ALL_BEASTS).forEach(place);
